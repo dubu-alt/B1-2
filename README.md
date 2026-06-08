@@ -431,7 +431,35 @@ Deadlock 재현 로그:
 2026-05-27 05:50:10,820 [INFO] [AgentWorker][Worker-Thread-2] Need resource [Shared_Memory_A] to write logs.
 2026-05-27 05:50:10,820 [INFO] [AgentWorker][Worker-Thread-2] WAITING for [Shared_Memory_A]... (Status: BLOCKED)
 ```
+### E. 프로세스 상태 (ps 명령 - 실제 테스트에서)
 
+```
+vnkers948441@c6r6s1 B1-2 % docker exec agent-deadlock ps -ef | grep agent-app-leak
+agentus+       1       0  0 03:41 ?        00:00:00 /opt/b1-2/agent-app-leak
+agentus+       8       1  1 03:41 ?        00:00:00 /opt/b1-2/agent-app-leak
+```
+* **부모와 자식 관계 (PID 1번과 8번)**
+  * 컨테이너가 시작되면서 `PID 1`번으로 `/opt/b1-2/agent-app-leak` 메인 프로그램이 실행되었습니다.
+  * 실행 직후 메인 프로그램(PID 1)이 내부적으로 자식 프로세스 혹은 멀티프로세스를 사용하여 `PID 8`번 프로세스를 새로 복제(Fork)하여 생성했습니다.
+
+* **데드락(Deadlock) 의심 상황**
+  * 현재 두 프로세스 모두 CPU 사용 시간(`TIME`)이 `00:00:00`으로 멈춰 있습니다. 
+  * 이 프로그램은 무한 루프를 돌며 CPU를 100% 점유하는 상태가 아니라, **서로 자원을 대기하며 완전히 멈춰버린(Blocked/Sleep) 전형적인 데드락 상태**입니다.
+
+### 출력 결과 정보 해석
+
+| 항목 | agentus+ (1행) | agentus+ (2행) | 의미 |
+| :--- | :--- | :--- | :--- |
+| **UID** | agentus+ | agentus+ | 프로세스를 실행한 사용자 계정 (보안을 위해 root가 아닌 일반 계정 사용 중) |
+| **PID** | 1 | 8 | 프로세스 고유 ID (1번은 컨테이너의 메인 프로세스) |
+| **PPID** | 0 | 1 | 부모 프로세스 ID (8번 프로세스는 1번 프로세스가 생성함) |
+| **C** | 0 | 1 | CPU 사용률 (%) |
+| **STIME** | 03:41 | 03:41 | 프로세스가 시작된 시간 |
+| **TTY** | ? | ? | 프로세스가 결합된 터미널 타입 (백그라운드 실행이라 없음) |
+| **TIME** | 00:00:00 | 00:00:00 | 프로세스가 지금까지 사용한 총 CPU 시간 |
+| **CMD** | /opt/b1-2/... | /opt/b1-2/... | 실행 중인 실제 명령어 경로 |
+
+---
 PID 존재 증거:
 
 ```text
